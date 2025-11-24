@@ -198,18 +198,18 @@ class Road:
                 gap = vehicle_ahead.position - vehicle.position - vehicle_ahead.get_length()
                 
                 # Bezpečná vzdálenost (např. 15 metrů)
-                safe_distance = 15.0
+                safe_distance = 20.0
                 
                 if gap < safe_distance:
                     # HROZÍ SRÁŽKA!
                     
                     if vehicle_ahead.stopped or vehicle_ahead.speed == 0:
                         # Pokud auto před námi stojí a jsme fakt blízko -> Zastavíme taky
-                        if gap < 2.0: # 2 metry od nárazníku
+                        if gap < 5.0: # 2 metry od nárazníku
                             vehicle.stop()
                         else:
-                            # Dojíždíme ho, zpomalíme drasticky na 5 m/s
-                            vehicle.speed = min(vehicle.speed, 5.0) 
+                            # Dojíždíme ho, zpomalíme drasticky na 10 m/s
+                            vehicle.speed = min(vehicle.speed, 10.0) 
                     else:
                         # Auto před námi jede, ale pomaleji -> přizpůsobíme rychlost
                         # Jedeme max tak rychle, jako auto před námi
@@ -254,7 +254,7 @@ class TrafficGenerator:
         if len(self.road.vehicles) > 0:
             first_vehicle = self.road.vehicles[0]
             # Pokud je první auto příliš blízko startu (např. méně než 15 metrů), negenerujeme nic
-            if first_vehicle.position < 15.0:
+            if first_vehicle.position < 30.0:
                 return False 
 
         # 2. Výběr typu vozidla (Vážený výběr - více aut než kamionů)
@@ -312,19 +312,24 @@ class Visualizer:
         road_y = self.height // 2
         
         for v in self.road.vehicles:
-            # Převod pozice na pixely
-            x = v.position * self.scale
-            y = road_y + 7 # Aby auto jelo v pruhu
+            # Spočítáme délku auta v pixelech
+            length_pixels = v.get_length() * self.scale
+            
+            # OPRAVA:
+            # v.position je "čumák" auta.
+            # Abychom auto vykreslili správně, musíme začít kreslit "vlevo" od čumáku.
+            # Tedy: x = (pozice * měřítko) - délka_v_pixelech
+            x = (v.position * self.scale) - length_pixels
+            
+            y = road_y + 7
             
             # Barva vozidla
             color = v.color
-            
             if v.stopped:
-                color = (100, 0, 0) # Tmavá, když stojí
+                color = (max(0, v.color[0]-50), max(0, v.color[1]-50), max(0, v.color[2]-50))
             
-            # Vykreslení (obdélník)
-            # pygame.Rect(x, y, šířka, výška)
-            pygame.draw.rect(self.screen, color, (x, y, v.get_length() * self.scale, 10))
+            # Vykreslení
+            pygame.draw.rect(self.screen, color, (x, y, length_pixels, 10))
 
     def draw_lights(self):
         road_y = self.height // 2 + 30 # Semafor bude pod silnicí
