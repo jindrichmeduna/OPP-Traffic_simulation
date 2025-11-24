@@ -1,17 +1,24 @@
 import random
 import pygame
 
+# --- KONSTANTY SMĚRŮ ---
+DIR_RIGHT = "RIGHT" # Doprava
+DIR_LEFT  = "LEFT"  # Doleva
+DIR_DOWN  = "DOWN"  # Dolů
+DIR_UP    = "UP"    # Nahoru
+
 # --- 1. RODIČOVSKÉ TŘÍDY (Dědičnost) ---
 class Vehicle:
     """
     Základní třída pro všechna vozidla.
     Ostatní auta (Car, Truck, Bus) z ní budou dědit.
     """
-    def __init__(self, position, speed, acceleration):
+    def __init__(self, position, speed, acceleration, direction):
         self.position = position  # Pozice v metrech
         self.speed = speed        # Rychlost v m/s
         self.max_speed = speed    # Maximální rychlost pro opětovné rozjetí
         self.acceleration = acceleration
+        self.direction = direction  # Směr jízdy
         self.stopped = False      # Zda auto stojí
         self.color = "red"        # Jen pro vizualizaci
 
@@ -36,8 +43,8 @@ class Vehicle:
 # --- 2. KONKRÉTNÍ VOZIDLA ---
 
 class Car(Vehicle):
-    def __init__(self, speed, position):
-        super().__init__(position, speed, acceleration = 7.0)
+    def __init__(self, speed, position, direction):
+        super().__init__(position, speed, acceleration = 7.0, direction = direction)
         self.color = (0, 100, 255) # Modrá
 
     def get_length(self):
@@ -45,8 +52,8 @@ class Car(Vehicle):
 
 
 class Bus(Vehicle):
-    def __init__(self, speed, position):
-        super().__init__(position, speed, acceleration = 5)
+    def __init__(self, speed, position, direction):
+        super().__init__(position, speed, acceleration = 5, direction = direction)
         self.color = (255, 255, 0) # Žlutá
 
     def get_length(self):
@@ -54,8 +61,8 @@ class Bus(Vehicle):
 
 
 class Truck(Vehicle):
-    def __init__(self, speed, position):
-        super().__init__(position, speed, acceleration = 3)
+    def __init__(self, speed, position, direction):
+        super().__init__(position, speed, acceleration = 3, direction = direction)
         self.color = (0, 255, 0) # Zelená
 
     def get_length(self):
@@ -133,9 +140,10 @@ class SmartTrafficLight(TrafficLight):
 # --- 4. SILNICE (Řízení simulace) ---
 
 class Road:
-    def __init__(self, length, direction = 'H', start_x=0, start_y=0):
+    def __init__(self, length, direction = 'H', start_x=0, start_y=0, reverse=False):
         self.length = length
         self.direction = direction # 'H' = Horizontal, 'V' = Vertical
+        self.reverse = reverse     # Reverzní směr (doleva / nahoru)
         self.start_x = start_x
         self.start_y = start_y
         self.vehicles = []       # Seznam vozidel
@@ -246,71 +254,46 @@ class IntersectionController:
     """
     Řídí dva semafory na křížení cest. Zajišťuje, že nemohou mít oba zelenou.
     """
-    def __init__(self, light_h, light_v, green_duration=5.0, red_clearance=2.0):
-        self.light_h = light_h
-        self.light_v = light_v
-        
-        # Nastavení časů
-        self.green_duration = green_duration  # Jak dlouho svítí zelená
-        self.red_clearance = red_clearance    # Jak dlouho je "ticho" mezi přepnutím
-        
+    def __init__(self, lights_h, lights_v, green_duration=8.0, red_clearance=2.0):
+        self.lights_h = lights_h # Očekáváme seznam (list)
+        self.lights_v = lights_v # Očekáváme seznam (list)
+        self.green_duration = green_duration
+        self.red_clearance = red_clearance
         self.timer = 0.0
-        self.state = "H_GREEN" # Počáteční stav
+        self.state = "H_GREEN"
         
-        # Aplikace počátečního stavu
-        self.light_h.is_green = True
-        self.light_v.is_green = False
+        # Nastavení startovního stavu
+        self.set_lights(self.lights_h, True)
+        self.set_lights(self.lights_v, False)
+
+    def set_lights(self, lights, is_green):
+        """Pomocná metoda, která přepne všechny semafory v seznamu."""
+        for l in lights:
+            l.is_green = is_green
 
     def update(self, dt):
         self.timer += dt
-        
-        # --- Logika Stavového Automatu ---
-        
-        # 1. Stav: Horizontální má zelenou
         if self.state == "H_GREEN":
-            if self.timer >= self.green_duration:
-                # Čas vypršel -> Vypneme H, zapneme VŠECHNY ČERVENÉ
-                self.change_state("TO_VERTICAL") # Přejdeme do mezistavu
-
-        # 2. Stav: Všichni červená (přechod na vertikální)
+            if self.timer >= self.green_duration: self.change_state("TO_VERTICAL")
         elif self.state == "TO_VERTICAL":
-            if self.timer >= self.red_clearance:
-                # Bezpečná pauza vypršela -> Zapneme V
-                self.change_state("V_GREEN")
-
-        # 3. Stav: Vertikální má zelenou
+            if self.timer >= self.red_clearance: self.change_state("V_GREEN")
         elif self.state == "V_GREEN":
-            if self.timer >= self.green_duration:
-                # Čas vypršel -> Vypneme V, zapneme VŠECHNY ČERVENÉ
-                self.change_state("TO_HORIZONTAL")
-
-        # 4. Stav: Všichni červená (přechod na horizontální)
+            if self.timer >= self.green_duration: self.change_state("TO_HORIZONTAL")
         elif self.state == "TO_HORIZONTAL":
-            if self.timer >= self.red_clearance:
-                # Bezpečná pauza vypršela -> Zapneme H
-                self.change_state("H_GREEN")
+            if self.timer >= self.red_clearance: self.change_state("H_GREEN")
 
     def change_state(self, new_state):
-        """Pomocná metoda pro změnu stavu a reset časovače."""
         self.state = new_state
         self.timer = 0.0
-        
-        # Nastavení světel podle nového stavu
         if new_state == "H_GREEN":
-            self.light_h.is_green = True
-            self.light_v.is_green = False
-            print("Křižovatka: HORIZONTÁLNÍ ZELENÁ")
-            
+            self.set_lights(self.lights_h, True)
+            self.set_lights(self.lights_v, False)
         elif new_state == "V_GREEN":
-            self.light_h.is_green = False
-            self.light_v.is_green = True
-            print("Křižovatka: VERTIKÁLNÍ ZELENÁ")
-            
+            self.set_lights(self.lights_h, False)
+            self.set_lights(self.lights_v, True)
         else:
-            # Stavy TO_VERTICAL a TO_HORIZONTAL znamenají celo-červenou
-            self.light_h.is_green = False
-            self.light_v.is_green = False
-            print("Křižovatka: BEZPEČNOSTNÍ PAUZA (Vše červená)")
+            self.set_lights(self.lights_h, False)
+            self.set_lights(self.lights_v, False)
 
 
 # --- 5. GENERÁTOR DOPRAVY ---
@@ -341,15 +324,24 @@ class TrafficGenerator:
         if len(road.vehicles) > 0:
             if road.vehicles[0].position < 40.0:
                 return False 
+            
+        # 2. Určení směru podle silnice
+        direction = DIR_RIGHT # Default
+        if road.direction == 'H':
+            # Pokud je silnice reverzní, jede doleva, jinak doprava
+            direction = DIR_LEFT if road.reverse else DIR_RIGHT
+        else:
+            # Pokud je silnice reverzní, jede nahoru, jinak dolů
+            direction = DIR_UP if road.reverse else DIR_DOWN
 
-        # 2. Výběr typu
+        # 3. Výběr typu
         vehicle_type = random.choices([Car, Truck, Bus], weights=[50, 20, 30], k=1)[0]
         
-        # 3. Rychlost
+        # 4. Rychlost
         speed = random.uniform(20, 30)
 
-        # 4. Vytvoření
-        new_vehicle = vehicle_type(position=-10.0, speed=speed)
+        # 5. Vytvoření
+        new_vehicle = vehicle_type(position=-10.0, speed=speed, direction=direction)
         road.add_vehicle(new_vehicle)
         
         # Pro debug vypíšeme info
@@ -389,37 +381,67 @@ class Visualizer:
 
     def draw_vehicle(self, v, road):
         length = v.get_length() * self.scale
-        width = 10 # Grafická šířka
+        width = 10 
+        lane_offset = 10 # Vzdálenost středu pruhu od středu silnice
         
-        # Výpočet souřadnic
-        if road.direction == 'H':
-            # Vodorovně: x se mění, y je fixní
+        # Souřadnice levého horního rohu pro vykreslení
+        x, y = 0, 0
+        rect_width, rect_height = 0, 0
+
+        # --- LOGIKA PODLE SMĚRU VOZIDLA ---
+        
+        if v.direction == DIR_RIGHT:
+            # Jede doprava -> dolní pruh (+ offset)
+            # Position se přičítá k X
             x = road.start_x + (v.position * self.scale) - length
-            y = road.start_y + 6
-            rect = (x, y, length, width)
-        else:
-            # Svisle: x je fixní, y se mění
-            # Pozor: Auto jede dolů, takže délku odečítáme od Y
-            x = road.start_x - 15
+            y = road.start_y + lane_offset - (width // 2) + 1
+            rect_width, rect_height = length, width
+
+        elif v.direction == DIR_LEFT:
+            # Jede doleva -> horní pruh (- offset)
+            # Position se ODČÍTÁ od konce silnice (protože position je ujetá vzdálenost)
+            # Start silnice (vizuálně) je vpravo: road.start_x + road.length
+            x = (road.start_x + road.length) - (v.position * self.scale)
+            y = road.start_y - lane_offset - (width // 2)
+            rect_width, rect_height = length, width
+
+        elif v.direction == DIR_DOWN:
+            # Jede dolů -> pravý pruh (- offset)
+            # Position se přičítá k Y
+            x = road.start_x - lane_offset - (width // 2)
             y = road.start_y + (v.position * self.scale) - length
-            # Pro svislé auto prohodíme šířku a délku
-            rect = (x, y, width, length)
+            rect_width, rect_height = width, length # Prohozené rozměry
+
+        elif v.direction == DIR_UP:
+            # Jede nahoru -> levý pruh (+ offset)
+            # Position se ODČÍTÁ od konce silnice (dole)
+            x = road.start_x + lane_offset - (width // 2) + 1
+            y = (road.start_y + road.length) - (v.position * self.scale)
+            rect_width, rect_height = width, length # Prohozené rozměry
             
         # Barva
         color = v.color
         if v.stopped:
              color = (max(0, v.color[0]-50), max(0, v.color[1]-50), max(0, v.color[2]-50))
 
-        pygame.draw.rect(self.screen, color, rect)
+        pygame.draw.rect(self.screen, color, (x, y, rect_width, rect_height))
 
     def draw_lights(self, road):
         for light in road.traffic_lights:
             if road.direction == 'H':
-                x = road.start_x + light.position
-                y = road.start_y + 30
+                if road.reverse:
+                    x = road.start_x + road.length - light.position
+                    y = road.start_y - 30
+                else:
+                    x = road.start_x + light.position
+                    y = road.start_y + 30
             else:
-                x = road.start_x - 30
-                y = road.start_y + light.position
+                if road.reverse:
+                    x = road.start_x + 30
+                    y = road.start_y + road.length - light.position
+                else:
+                    x = road.start_x - 30
+                    y = road.start_y + light.position
                 
             color = (0, 255, 0) if light.is_green else (255, 0, 0)
             pygame.draw.circle(self.screen, color, (int(x), int(y)), 8)
@@ -522,33 +544,37 @@ class Visualizer:
 
 if __name__ == "__main__":
     # --- Nastavení světa ---
+
+    # Střed křižovatky
+    CX, CY = 500, 350
     
-    # 1. Vodorovná silnice (Jede zleva doprava, uprostřed obrazovky)
-    road_h = Road(length=1000, direction='H', start_x=0, start_y=350)
+    # 1. Definice 4 silnic (každá má 2 pruhy, jeden reverse)
+    road_h_right = Road(1000, 'H', 0, CY, reverse=False)
+    road_h_left  = Road(1000, 'H', 0, CY, reverse=True)
+    road_v_down  = Road(700, 'V', CX, 0, reverse=False)
+    road_v_up    = Road(700, 'V', CX, 0, reverse=True)
     
-    # 2. Svislá silnice (Jede shora dolů, kříží vodorovnou na metru 500)
-    # Startuje na X=500, Y=0
-    road_v = Road(length=700, direction='V', start_x=500, start_y=0)
+    # 2. Definice semaforů
+    # Pozice je relativní k začátku jízdy daného pruhu
+    l1 = TrafficLight(470) # Pro H Right
+    l2 = TrafficLight(470) # Pro H Left
+    l3 = TrafficLight(320) # Pro V Down
+    l4 = TrafficLight(320) # Pro V Up
     
-    # --- Semafory ---
-    # Křižovatka je na pozici 500m (horizontálně) a 350m (vertikálně)
-    light_h = TrafficLight(position=500 - 30) # Zastavíme kousek před středem
-    light_v = TrafficLight(position=350 - 30) # Zastavíme kousek před středem
+    # 3. Přiřazení semaforů ke SPRÁVNÝM silnicím
+    road_h_right.add_traffic_light(l1)
+    road_h_left.add_traffic_light(l2)
+    road_v_down.add_traffic_light(l3)
+    road_v_up.add_traffic_light(l4)
     
-    # Přidáme semafory na silnice (POZOR: Musí být typu TrafficLight, ne Smart/Cyclic, 
-    # protože je bude řídit náš nový IntersectionController)
-    road_h.add_traffic_light(light_h)
-    road_v.add_traffic_light(light_v)
+    # 4. Řadič (Bere seznamy semaforů)
+    controller = IntersectionController([l1, l2], [l3, l4], 6.0, 2.0)
     
-    # --- Řadič křižovatky ---
-    # 8 sekund zelená, 2 sekundy všichni stojí
-    crossroad_controller = IntersectionController(light_h, light_v, green_duration=8.0, red_clearance=2.0)
-    
-    roads = [road_h, road_v]
+    # 5. Spuštění
+    roads = [road_h_right, road_h_left, road_v_down, road_v_up]
     generator = TrafficGenerator(roads)
-    app = Visualizer(roads, generator=generator)
     
-    # Předáme řadič
-    app.intersection_ctrl = crossroad_controller
+    app = Visualizer(roads, generator, 1000, 700)
+    app.intersection_ctrl = controller
     
     app.run()
