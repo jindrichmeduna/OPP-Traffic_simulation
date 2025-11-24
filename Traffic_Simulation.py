@@ -41,7 +41,7 @@ class Car(Vehicle):
         self.color = (0, 100, 255) # Modrá
 
     def get_length(self):
-        return 4.5  # Osobák je nejkratší
+        return 10  # Osobák je nejkratší
 
 
 class Bus(Vehicle):
@@ -50,7 +50,7 @@ class Bus(Vehicle):
         self.color = (255, 255, 0) # Žlutá
 
     def get_length(self):
-        return 10.0 # Autobus je střední délky
+        return 20 # Autobus je střední délky
 
 
 class Truck(Vehicle):
@@ -59,7 +59,7 @@ class Truck(Vehicle):
         self.color = (0, 255, 0) # Zelená
 
     def get_length(self):
-        return 12.0 # Kamion je nejdelší
+        return 30 # Kamion je nejdelší
 
 
 # --- 3. SEMAFORY (Polymorfismus) ---
@@ -137,6 +137,9 @@ class Road:
         self.length = length
         self.vehicles = []       # Seznam vozidel
         self.traffic_lights = [] # Seznam semaforů
+
+        self.stats_cars_finished = 0  # Počet aut, co dojela do cíle
+        self.stats_avg_speed = 0.0    # Průměrná rychlost aut na silnici
 
     def add_vehicle(self, vehicle):
         self.vehicles.append(vehicle)
@@ -219,6 +222,21 @@ class Road:
             # 3. Aplikace pohybu
             vehicle.move(dt)
 
+        # --- 4. Odstranění aut a aktualizace statistik ---
+        # Nejdřív zjistíme, kdo dojel
+        finished_cars = [v for v in self.vehicles if v.position >= self.length]
+        self.stats_cars_finished += len(finished_cars)
+        
+        # Ponecháme jen auta, co jsou stále na silnici
+        self.vehicles = [v for v in self.vehicles if v.position < self.length]
+        
+        # Výpočet průměrné rychlosti (pro statistiky)
+        if len(self.vehicles) > 0:
+            total_speed = sum(v.speed for v in self.vehicles)
+            self.stats_avg_speed = (total_speed / len(self.vehicles)) * 3.6 # Převod na km/h
+        else:
+            self.stats_avg_speed = 0.0
+
 
 # --- 5. GENERÁTOR DOPRAVY ---
 
@@ -226,7 +244,7 @@ class TrafficGenerator:
     """
     Třída, která se stará o automatické generování dopravy.
     """
-    def __init__(self, road, min_delay=3.0, max_delay=5.0):
+    def __init__(self, road, min_delay=8.0, max_delay=10.0):
         self.road = road
         self.min_delay = min_delay
         self.max_delay = max_delay
@@ -254,7 +272,7 @@ class TrafficGenerator:
         if len(self.road.vehicles) > 0:
             first_vehicle = self.road.vehicles[0]
             # Pokud je první auto příliš blízko startu (např. méně než 15 metrů), negenerujeme nic
-            if first_vehicle.position < 30.0:
+            if first_vehicle.position < 50.0:
                 return False 
 
         # 2. Výběr typu vozidla (Vážený výběr - více aut než kamionů)
@@ -347,6 +365,33 @@ class Visualizer:
             if isinstance(light, SmartTrafficLight):
                  pygame.draw.circle(self.screen, (255, 255, 255), (int(x), road_y), 3, 1)
 
+    def draw_ui(self):
+        # 1. Podkladový panel (poloprůhledný)
+        # Vytvoříme povrch (Surface) s alfa kanálem
+        ui_surface = pygame.Surface((220, 100)) 
+        ui_surface.set_alpha(200) # Průhlednost (0-255)
+        ui_surface.fill((0, 0, 0)) # Černá barva
+        
+        # Vykreslíme ho do levého horního rohu
+        self.screen.blit(ui_surface, (10, 10))
+        
+        # 2. Texty statistik
+        # Počet aut na scéně
+        text_count = self.font.render(f"Aut na silnici: {len(self.road.vehicles)}", True, (255, 255, 255))
+        self.screen.blit(text_count, (20, 20))
+        
+        # Počet aut v cíli
+        text_finished = self.font.render(f"Dojelo do cíle: {self.road.stats_cars_finished}", True, (0, 255, 0))
+        self.screen.blit(text_finished, (20, 45))
+        
+        # Průměrná rychlost
+        # Barva se mění: Zelená (rychle), Červená (zácpa)
+        speed = self.road.stats_avg_speed
+        color = (0, 255, 0) if speed > 50 else (255, 100, 0) if speed > 20 else (255, 0, 0)
+        
+        text_speed = self.font.render(f"Prům. rychlost: {speed:.1f} km/h", True, color)
+        self.screen.blit(text_speed, (20, 70))
+
     def run(self):
         running = True
         dt = 0.016 # Cca 60 FPS
@@ -369,10 +414,13 @@ class Visualizer:
             self.draw_road()
             self.draw_lights()
             self.draw_vehicles()
+
+            # Volání UI
+            self.draw_ui()
             
-            # Výpis času
+            """ # Výpis času
             time_text = self.font.render(f"Simulace běží...", True, (255, 255, 255))
-            self.screen.blit(time_text, (10, 10))
+            self.screen.blit(time_text, (10, 10)) """
 
             # Překlopení bufferu (zobrazení snímku)
             pygame.display.flip()
