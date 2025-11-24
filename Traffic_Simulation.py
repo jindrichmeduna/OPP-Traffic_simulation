@@ -7,10 +7,11 @@ class Vehicle:
     Základní třída pro všechna vozidla.
     Ostatní auta (Car, Truck, Bus) z ní budou dědit.
     """
-    def __init__(self, position, speed):
+    def __init__(self, position, speed, acceleration):
         self.position = position  # Pozice v metrech
         self.speed = speed        # Rychlost v m/s
         self.max_speed = speed    # Maximální rychlost pro opětovné rozjetí
+        self.acceleration = acceleration
         self.stopped = False      # Zda auto stojí
         self.color = "red"        # Jen pro vizualizaci
 
@@ -32,11 +33,11 @@ class Vehicle:
         self.speed = 0
 
 
-# --- 2. KONKRÉTNÍ AUTA ---
+# --- 2. KONKRÉTNÍ VOZIDLA ---
 
 class Car(Vehicle):
-    def __init__(self, position, speed):
-        super().__init__(position, speed)
+    def __init__(self, speed, position):
+        super().__init__(position, speed, acceleration = 5.0)
         self.color = (0, 100, 255) # Modrá
 
     def get_length(self):
@@ -44,8 +45,8 @@ class Car(Vehicle):
 
 
 class Bus(Vehicle):
-    def __init__(self, position, speed):
-        super().__init__(position, speed)
+    def __init__(self, speed, position):
+        super().__init__(position, speed, acceleration = 2.5)
         self.color = (255, 255, 0) # Žlutá
 
     def get_length(self):
@@ -53,8 +54,8 @@ class Bus(Vehicle):
 
 
 class Truck(Vehicle):
-    def __init__(self, position, speed):
-        super().__init__(position, speed)
+    def __init__(self, speed, position):
+        super().__init__(position, speed, acceleration = 1.5)
         self.color = (0, 255, 0) # Zelená
 
     def get_length(self):
@@ -156,18 +157,19 @@ class Road:
         for i in range(len(self.vehicles)):
             vehicle = self.vehicles[i]
             
-            # --- A) Resetování stavu ---
-            # Předpokládáme, že auto chce jet svou maximálkou a nestojí
-            # Pokud uživatel implementoval start(), použijeme to, jinak ručně:
+            # --- A) Resetování stavu a Akcelerace ---
             if vehicle.stopped:
-                 # Pokud stálo na semaforu, ale už může jet, "odbrzdíme" ho
-                 # Logika semaforu níže ho případně zase zastaví
+                 # Pokud auto stojí (brzdí), nic neděláme, dokud nedostane pokyn k rozjezdu
                  pass 
             else:
-                # Pokud nestojí, snaží se zrychlit na svou max_speed
-                # (Simulace akcelerace by byla složitější, tady to uděláme skokově)
+                # Pokud auto jede pomaleji než je jeho maximálka, zrychlujeme
                 if vehicle.speed < vehicle.max_speed:
-                    vehicle.speed = vehicle.max_speed
+                    # Vzorec: rychlost = rychlost + zrychlení * čas
+                    vehicle.speed += vehicle.acceleration * dt
+                    
+                    # Pojistka: nesmíme překročit maximálku
+                    if vehicle.speed > vehicle.max_speed:
+                        vehicle.speed = vehicle.max_speed
 
             # --- B) Reakce na semafory ---
             should_stop_at_light = False
@@ -184,7 +186,6 @@ class Road:
                 # Pokud stálo, ale už je zelená, rozjedeme ho
                 # Tady využíváme max_speed
                 vehicle.stopped = False
-                vehicle.speed = vehicle.max_speed
 
             # --- C) Reakce na vozidla (Adaptivní tempomat) ---
             # Podíváme se, jestli je před námi nějaké auto
@@ -219,15 +220,75 @@ class Road:
             vehicle.move(dt)
 
 
-# --- 5. VIZUALIZACE (Pygame) ---
+# --- 5. GENERÁTOR DOPRAVY ---
+
+class TrafficGenerator:
+    """
+    Třída, která se stará o automatické generování dopravy.
+    """
+    def __init__(self, road, min_delay=3.0, max_delay=5.0):
+        self.road = road
+        self.min_delay = min_delay
+        self.max_delay = max_delay
+        self.timer = 0.0
+        self.next_spawn_time = 0.0 # Hned na začátku zkusíme něco vygenerovat
+
+    def update(self, dt):
+        self.timer += dt
+        
+        # Pokud uplynul čas pro další auto
+        if self.timer >= self.next_spawn_time:
+            # Zkusíme přidat auto, pokud je místo
+            if self.spawn_vehicle():
+                # Pokud se to povedlo, resetujeme časovač a vylosujeme nový interval
+                self.timer = 0.0
+                self.next_spawn_time = random.uniform(self.min_delay, self.max_delay)
+
+    def spawn_vehicle(self):
+        """Vytvoří náhodné vozidlo a přidá ho na silnici, pokud je volno."""
+        
+        # 1. Kontrola, zda je na startu místo (abychom se nenaspawnovali do jiného auta)
+        # Seřadíme auta, abychom našli to, co je nejblíž začátku (index 0)
+        self.road.vehicles.sort(key=lambda v: v.position)
+        
+        if len(self.road.vehicles) > 0:
+            first_vehicle = self.road.vehicles[0]
+            # Pokud je první auto příliš blízko startu (např. méně než 15 metrů), negenerujeme nic
+            if first_vehicle.position < 15.0:
+                return False 
+
+        # 2. Výběr typu vozidla (Vážený výběr - více aut než kamionů)
+        # choices vrátí seznam, my chceme první prvek [0]
+        vehicle_type = random.choices([Car, Truck, Bus], weights=[45, 30, 25], k=1)[0]
+
+        # 3. Náhodná rychlost (trochu se liší od ideální)
+        speed = 0
+        if vehicle_type == Car:
+            speed = random.uniform(22.0, 38.0)
+        elif vehicle_type == Bus:
+            speed = random.uniform(27.0, 23.0)
+        else: # Truck
+            speed = random.uniform(12.0, 18.0)
+
+        # 4. Vytvoření instance a přidání na silnici
+        new_vehicle = vehicle_type(position=-5.0, speed=speed) # Startujeme těsně před mapou
+        self.road.add_vehicle(new_vehicle)
+        
+        # Pro debug vypíšeme info
+        print(f"Generátor: Přidáno {vehicle_type.__name__} (Rychlost: {speed:.1f} m/s)")
+        return True
+
+
+# --- 6. VIZUALIZACE (Pygame) ---
 
 class Visualizer:
     """
     Třída starající se o vykreslování simulace pomocí Pygame.
     Odděluje logiku (Road) od grafiky (Pygame).
     """
-    def __init__(self, road, width=1200, height=400):
+    def __init__(self, road, generator=None, width=1200, height=400):
         self.road = road
+        self.generator = generator
         self.width = width
         self.height = height
         self.scale = 1  # 1 metr = 1 pixel
@@ -293,6 +354,8 @@ class Visualizer:
                 # Zde můžeš přidat ovládání (např. mezerník pro pauzu)
 
             # 2. Aktualizace logiky simulace
+            if self.generator:
+                self.generator.update(dt)
             self.road.update(dt)
 
             # 3. Vykreslení
@@ -322,14 +385,17 @@ if __name__ == "__main__":
     road = Road(1200) # Silnice dlouhá 1200m
     
     # Semafory
-    road.add_traffic_light(CyclicTrafficLight(400, 3.0))      # Obyčejný na 400m
-    road.add_traffic_light(SmartTrafficLight(800, 100.0))     # Chytrý na 800m
+    road.add_traffic_light(CyclicTrafficLight(400, 5.0))      # Obyčejný na 400m, čas přepnutí 5s
+    road.add_traffic_light(SmartTrafficLight(800, 50.0))     # Chytrý na 800m, dosah 50m
     
     # Auta
-    road.add_vehicle(Car(-20, 25))      # Rychlé auto
-    road.add_vehicle(Truck(50, 15))     # Pomalý kamion
-    road.add_vehicle(Bus(0, 20))    # Autobus 
+    """ road.add_vehicle(Car(30, 25))      # Auto
+    road.add_vehicle(Truck(200, 15))     # Kamion
+    road.add_vehicle(Bus(120, 20))    # Autobus """
+
+    # Bude generovat auto každých 1.5 až 3.5 sekundy
+    traffic_generator = TrafficGenerator(road, min_delay=1.5, max_delay=3.5)
 
     # 2. Spuštění vizualizace (View/Controller)
-    app = Visualizer(road)
+    app = Visualizer(road, generator=traffic_generator)
     app.run()
