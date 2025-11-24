@@ -10,6 +10,7 @@ class Vehicle:
     def __init__(self, position, speed):
         self.position = position  # Pozice v metrech
         self.speed = speed        # Rychlost v m/s
+        self.max_speed = speed    # Maximální rychlost pro opětovné rozjetí
         self.stopped = False      # Zda auto stojí
         self.color = "red"        # Jen pro vizualizaci
 
@@ -34,16 +35,28 @@ class Vehicle:
 # --- 2. KONKRÉTNÍ AUTA ---
 
 class Car(Vehicle):
+    def __init__(self, position, speed):
+        super().__init__(position, speed)
+        self.color = (0, 100, 255) # Modrá
+
     def get_length(self):
         return 4.5  # Osobák je nejkratší
 
 
 class Bus(Vehicle):
+    def __init__(self, position, speed):
+        super().__init__(position, speed)
+        self.color = (255, 255, 0) # Žlutá
+
     def get_length(self):
         return 10.0 # Autobus je střední délky
 
 
 class Truck(Vehicle):
+    def __init__(self, position, speed):
+        super().__init__(position, speed)
+        self.color = (0, 255, 0) # Zelená
+
     def get_length(self):
         return 12.0 # Kamion je nejdelší
 
@@ -121,8 +134,8 @@ class SmartTrafficLight(TrafficLight):
 class Road:
     def __init__(self, length):
         self.length = length
-        self.vehicles = []
-        self.traffic_lights = []
+        self.vehicles = []       # Seznam vozidel
+        self.traffic_lights = [] # Seznam semaforů
 
     def add_vehicle(self, vehicle):
         self.vehicles.append(vehicle)
@@ -132,31 +145,77 @@ class Road:
 
     def update(self, dt):
         # 1. Aktualizace semaforů
-        # DŮLEŽITÉ: Posíláme semaforům seznam aut (self.vehicles)
         for light in self.traffic_lights:
             light.update(dt, self.vehicles)
 
-        # 2. Logika zastavování na červenou (Zatím jednoduchá)
-        for vehicle in self.vehicles:
-            # Zkontrolujeme všechny semafory
-            should_stop = False
+        # DŮLEŽITÉ: Seřadíme vozidla podle pozice (od nejvzdálenějšího po nejbližší)
+        # Díky tomu přesně víme, že vehicles[i+1] je auto PŘED vehicles[i]
+        self.vehicles.sort(key=lambda v: v.position)
+
+        # 2. Hlavní smyčka pro každé vozidlo
+        for i in range(len(self.vehicles)):
+            vehicle = self.vehicles[i]
+            
+            # --- A) Resetování stavu ---
+            # Předpokládáme, že auto chce jet svou maximálkou a nestojí
+            # Pokud uživatel implementoval start(), použijeme to, jinak ručně:
+            if vehicle.stopped:
+                 # Pokud stálo na semaforu, ale už může jet, "odbrzdíme" ho
+                 # Logika semaforu níže ho případně zase zastaví
+                 pass 
+            else:
+                # Pokud nestojí, snaží se zrychlit na svou max_speed
+                # (Simulace akcelerace by byla složitější, tady to uděláme skokově)
+                if vehicle.speed < vehicle.max_speed:
+                    vehicle.speed = vehicle.max_speed
+
+            # --- B) Reakce na semafory ---
+            should_stop_at_light = False
             for light in self.traffic_lights:
-                # Pokud je semafor blízko před autem a je červená
                 distance = light.position - vehicle.position
+                # Pokud je semafor blízko (méně než 10m) a je červená
                 if 0 < distance < 10 and not light.is_green:
-                    should_stop = True
+                    should_stop_at_light = True
                     break
             
-            if should_stop:
+            if should_stop_at_light:
                 vehicle.stop()
-            else:
-                # Pokud není důvod stát, auto se rozjede (vrátíme mu rychlost)
-                # Poznámka: Toto je zjednodušení, v plné verzi by auto mělo svou max_speed
-                if vehicle.stopped:
-                    vehicle.stopped = False
-                    vehicle.speed = 20 # Reset rychlosti (zjednodušeno)
-            
-            # 3. Pohyb auta
+            elif vehicle.stopped:
+                # Pokud stálo, ale už je zelená, rozjedeme ho
+                # Tady využíváme max_speed
+                vehicle.stopped = False
+                vehicle.speed = vehicle.max_speed
+
+            # --- C) Reakce na vozidla (Adaptivní tempomat) ---
+            # Podíváme se, jestli je před námi nějaké auto
+            # i + 1 je index auta před námi (protože jsme je seřadili)
+            if i < len(self.vehicles) - 1:
+                vehicle_ahead = self.vehicles[i+1]
+                
+                # Vypočítáme mezeru (od čumáku našeho auta k zadku auta před námi)
+                # vehicle_ahead.get_length() je důležité, abychom do něj nevjeli polovinou
+                gap = vehicle_ahead.position - vehicle.position - vehicle_ahead.get_length()
+                
+                # Bezpečná vzdálenost (např. 15 metrů)
+                safe_distance = 15.0
+                
+                if gap < safe_distance:
+                    # HROZÍ SRÁŽKA!
+                    
+                    if vehicle_ahead.stopped or vehicle_ahead.speed == 0:
+                        # Pokud auto před námi stojí a jsme fakt blízko -> Zastavíme taky
+                        if gap < 2.0: # 2 metry od nárazníku
+                            vehicle.stop()
+                        else:
+                            # Dojíždíme ho, zpomalíme drasticky na 5 m/s
+                            vehicle.speed = min(vehicle.speed, 5.0) 
+                    else:
+                        # Auto před námi jede, ale pomaleji -> přizpůsobíme rychlost
+                        # Jedeme max tak rychle, jako auto před námi
+                        if vehicle.speed > vehicle_ahead.speed:
+                            vehicle.speed = vehicle_ahead.speed
+
+            # 3. Aplikace pohybu
             vehicle.move(dt)
 
 
@@ -196,11 +255,8 @@ class Visualizer:
             x = v.position * self.scale
             y = road_y + 7 # Aby auto jelo v pruhu
             
-            # Barva auta (podle toho, jestli brzdí)
-            color = (255, 0, 0) # Červená default
-            if isinstance(v, Car): color = (0, 0, 255)   # Modré auto
-            if isinstance(v, Truck): color = (0, 255, 0) # Zelený kamion
-            if isinstance(v, Bus): color = (255, 255, 0)   # Žlutý autobus
+            # Barva vozidla
+            color = v.color
             
             if v.stopped:
                 color = (100, 0, 0) # Tmavá, když stojí
@@ -258,6 +314,7 @@ class Visualizer:
 
         pygame.quit()
 
+
 # --- SPUŠTĚNÍ ---
 
 if __name__ == "__main__":
@@ -265,13 +322,13 @@ if __name__ == "__main__":
     road = Road(1200) # Silnice dlouhá 1200m
     
     # Semafory
-    road.add_traffic_light(CyclicTrafficLight(400, 4.0))      # Obyčejný na 400m
-    road.add_traffic_light(SmartTrafficLight(900, 100.0))     # Chytrý na 900m
+    road.add_traffic_light(CyclicTrafficLight(400, 3.0))      # Obyčejný na 400m
+    road.add_traffic_light(SmartTrafficLight(800, 100.0))     # Chytrý na 800m
     
     # Auta
-    road.add_vehicle(Car(50, 25))      # Rychlé auto
-    road.add_vehicle(Truck(0, 15))     # Pomalý kamion
-    road.add_vehicle(Bus(-100, 20))    # Autobus 
+    road.add_vehicle(Car(-20, 25))      # Rychlé auto
+    road.add_vehicle(Truck(50, 15))     # Pomalý kamion
+    road.add_vehicle(Bus(0, 20))    # Autobus 
 
     # 2. Spuštění vizualizace (View/Controller)
     app = Visualizer(road)
