@@ -19,6 +19,12 @@ class Vehicle:
         self.max_speed = speed    # Maximální rychlost pro opětovné rozjetí
         self.acceleration = acceleration
         self.direction = direction  # Směr jízdy
+
+        # Jak dlouho řidič "kouká", než se rozjede (1.1 vteřiny)
+        self.start_delay = 1.1
+        # Odpočet času
+        self.current_wait = 0.0
+
         self.stopped = False      # Zda auto stojí
         self.color = "red"        # Jen pro vizualizaci
 
@@ -170,12 +176,10 @@ class Road:
         # 2. Hlavní smyčka pro každé vozidlo
         for i in range(len(self.vehicles)):
             vehicle = self.vehicles[i]
+            should_stop = False
             
             # --- A) Resetování stavu a Akcelerace ---
-            if vehicle.stopped:
-                 # Pokud auto stojí (brzdí), nic neděláme, dokud nedostane pokyn k rozjezdu
-                 pass 
-            else:
+            if not vehicle.stopped:
                 # Pokud auto jede pomaleji než je jeho maximálka, zrychlujeme
                 if vehicle.speed < vehicle.max_speed:
                     # Vzorec: rychlost = rychlost + zrychlení * čas
@@ -186,20 +190,22 @@ class Road:
                         vehicle.speed = vehicle.max_speed
 
             # --- B) Reakce na semafory ---
-            should_stop_at_light = False
             for light in self.traffic_lights:
                 distance = light.position - vehicle.position
+                if 10 < distance < 100:
+                    # Přibližujeme se k semaforu - můžeme začít brzdit
+                    if not light.is_green:
+                        # Vypočítáme potřebné zpomalení, abychom zastavili před semaforem
+                        time_to_brake = distance / max(vehicle.speed, 0.1) # Vyhneme se dělení nulou
+                        required_deceleration = vehicle.speed / time_to_brake
+                        
+                        # Aplikujeme zpomalení (brzdíme)
+                        vehicle.speed -= required_deceleration * dt
+                        
                 # Pokud je semafor blízko (méně než 10m) a je červená
                 if 0 < distance < 10 and not light.is_green:
-                    should_stop_at_light = True
+                    should_stop = True # Důvod k zastavení 1: Červená
                     break
-            
-            if should_stop_at_light:
-                vehicle.stop()
-            elif vehicle.stopped:
-                # Pokud stálo, ale už je zelená, rozjedeme ho
-                # Tady využíváme max_speed
-                vehicle.stopped = False
 
             # --- C) Reakce na vozidla (Adaptivní tempomat) ---
             # Podíváme se, jestli je před námi nějaké auto
@@ -211,26 +217,49 @@ class Road:
                 # vehicle_ahead.get_length() je důležité, abychom do něj nevjeli polovinou
                 gap = vehicle_ahead.position - vehicle.position - vehicle_ahead.get_length()
                 
-                # Bezpečná vzdálenost (např. 15 metrů)
-                safe_distance = 20.0
+                # Dynamická bezpečná vzdálenost (čím rychleji jedu, tím větší mezeru chci)
+                # Pravidlo 2 sekund: safe_dist = rychlost * 1.5 + rezerva
+                safe_distance = (vehicle.speed * 1.5) + 5.0
                 
                 if gap < safe_distance:
                     # HROZÍ SRÁŽKA!
                     
                     if vehicle_ahead.stopped or vehicle_ahead.speed == 0:
                         # Pokud auto před námi stojí a jsme fakt blízko -> Zastavíme taky
-                        if gap < 5.0: # 2 metry od nárazníku
-                            vehicle.stop()
+                        if gap < 5.0: # 5 metrů od nárazníku
+                            should_stop = True # Důvod k zastavení 2: Auto před námi stojí
                         else:
-                            # Dojíždíme ho, zpomalíme drasticky na 10 m/s
-                            vehicle.speed = min(vehicle.speed, 10.0) 
+                            # Brzdíme
+                            time_to_brake = gap / max(vehicle.speed, 0.1) # Vyhneme se dělení nulou
+                            required_deceleration = vehicle.speed / time_to_brake
+                        
+                            # Aplikujeme zpomalení (brzdíme)
+                            vehicle.speed -= required_deceleration * dt
                     else:
                         # Auto před námi jede, ale pomaleji -> přizpůsobíme rychlost
-                        # Jedeme max tak rychle, jako auto před námi
-                        if vehicle.speed > vehicle_ahead.speed:
-                            vehicle.speed = vehicle_ahead.speed
+                        vehicle.speed = min(vehicle_ahead.speed - 2, vehicle.max_speed)
+
+            # --- D) FINÁLNÍ ROZHODNUTÍ ---
+            # Rozhodujeme až teď, když známe oba důvody (semafor i zácpu)
+            if should_stop:
+                vehicle.stop()
+                # Jakmile zastavíme, nastavíme "budík" na příští rozjezd.
+                # Auto bude muset čekat, až uběhne jeho start_delay.
+                vehicle.current_wait = vehicle.start_delay
+            
+            elif vehicle.stopped:
+                # ZMĚNA: Auto by mohlo jet (should_stop je False), ALE...
+                # ...musí uběhnout reakční doba řidiče!
+                
+                vehicle.current_wait -= dt # Odpočítáváme čas
+                
+                # Teprve až čas vyprší (je menší nebo roven nule), skutečně odbrzdíme
+                if vehicle.current_wait <= 0:
+                    vehicle.stopped = False
 
             # 3. Aplikace pohybu
+            if vehicle.speed < 0:
+                vehicle.stop()
             vehicle.move(dt)
 
         # --- 4. Odstranění aut a aktualizace statistik ---
@@ -338,7 +367,12 @@ class TrafficGenerator:
         vehicle_type = random.choices([Car, Truck, Bus], weights=[50, 20, 30], k=1)[0]
         
         # 4. Rychlost
-        speed = random.uniform(20, 30)
+        if vehicle_type == Car:
+            speed = random.uniform(23, 27)
+        elif vehicle_type == Bus:
+            speed = random.uniform(18, 22)
+        elif vehicle_type == Truck:
+            speed = random.uniform(13, 17)
 
         # 5. Vytvoření
         new_vehicle = vehicle_type(position=-10.0, speed=speed, direction=direction)
@@ -568,7 +602,7 @@ if __name__ == "__main__":
     road_v_up.add_traffic_light(l4)
     
     # 4. Řadič (Bere seznamy semaforů)
-    controller = IntersectionController([l1, l2], [l3, l4], 6.0, 2.0)
+    controller = IntersectionController([l1, l2], [l3, l4], 8.0, 2.0)
     
     # 5. Spuštění
     roads = [road_h_right, road_h_left, road_v_down, road_v_up]
