@@ -760,101 +760,126 @@ class Visualizer:
 
 if __name__ == "__main__":
     # --- Nastavení světa ---
+    size_width = 1200
+    size_height = 700
 
-    # SOUŘADNICE
-    CROSS_X = 400  # Křižovatka
-    RAIL_X = 800   # Přejezd
-    RAIL_Y = 100   # Horizontální trať nahoře
-    ROAD_Y = 350   # Vertikální silnice (křižovatka na 400)
-    
-    # 1. HORIZONTÁLNÍ SILNICE (Dlouhé 1200m, pokrývají oba uzly)
-    road_h_right = Road(1200, 'H', 0, ROAD_Y, reverse=False)
-    road_h_left  = Road(1200, 'H', 0, ROAD_Y, reverse=True)
-    
-    # 2. VERTIKÁLNÍ SILNICE (Křižovatka na 400)
-    road_v_down = Road(700, 'V', CROSS_X, 0, reverse=False)
-    road_v_up   = Road(700, 'V', CROSS_X, 0, reverse=True)
-    
-    # 3. KOLEJE (Přejezd na 800)
-    # Tady definujeme, že tohle jsou koleje!
-    track_down = Road(700, 'V', RAIL_X, 0, reverse=False, road_type="rail")
-    track_up   = Road(700, 'V', RAIL_X, 0, reverse=True, road_type="rail")
+    # Souřadnice křižovatek a přejezdů
+    road1_X = 400
+    road1_Y = 350
+    road2_X = 400
+    road2_Y = 600
+    rail1_X = 800
+    rail1_Y = 350
+    rail2_X = 400
+    rail2_Y = 100
 
-    # Příklad: Horizontální trať nahoře
-    track_horiz_right = Road(1200, 'H', 0, RAIL_Y, reverse=False, road_type="rail")
-    track_horiz_left  = Road(1200, 'H', 0, RAIL_Y, reverse=True, road_type="rail")
-    
-    # --- SEMAFORY PRO KŘIŽOVATKU (X=400) ---
-    # H-Right: Jede 0->1200. Křižovatka na 400. Semafor na 370.
-    l_cross_h_right = TrafficLight(370) 
-    
-    # H-Left: Jede 1200->0. Křižovatka na 400.
-    # Ujetá vzdálenost ke křižovatce: 1200 - 400 = 800. Semafor na 770.
-    l_cross_h_left = TrafficLight(770)
-    
-    # V-Down & Up: Křižovatka uprostřed (350). Semafor na 320.
-    l_cross_v_down = TrafficLight(320)
-    l_cross_v_up   = TrafficLight(320)
-    
-    # Přiřazení semaforů křižovatky
-    road_h_right.add_traffic_light(l_cross_h_right)
-    road_h_left.add_traffic_light(l_cross_h_left)
-    road_v_down.add_traffic_light(l_cross_v_down)
-    road_v_up.add_traffic_light(l_cross_v_up)
-    
-    # --- SEMAFORY PRO PŘEJEZD (X=800) ---
-    # H-Right: Jede 0->1200. Přejezd na 800. Semafor na 770.
-    l_rail_h_right = TrafficLight(770)
-    
-    # H-Left: Jede 1200->0. Přejezd na 800.
-    # Ujetá vzdálenost k přejezdu: 1200 - 800 = 400. Semafor na 370.
-    l_rail_h_left = TrafficLight(370)
+    # --- DEFINICE SILNIC A KOLEJÍ  ---
+    # 1. Horizontální silnice (Dlouhé 1200m, Křižovatka na x 400 a 800)
+    road1_h_right = Road(1200, 'H', 0, road1_Y, reverse=False)
+    road1_h_left  = Road(1200, 'H', 0, road1_Y, reverse=True)
+    road2_h_right = Road(1200, 'H', 0, road2_Y, reverse=False)
+    road2_h_left  = Road(1200, 'H', 0, road2_Y, reverse=True)
 
-    # V-Down
-    l_rail_v_down = TrafficLight(70)
+    # 2. Vertikální silnice (Dlouhá 700, Křižovatka na y 100 a 600)
+    road_v_down = Road(700, 'V', road1_X, 0, reverse=False)
+    road_v_up   = Road(700, 'V', road1_X, 0, reverse=True)
 
-    # V-Up
-    l_rail_v_up = TrafficLight(570)
-    
-    # Přiřazení semaforů přejezdu
-    road_h_right.add_traffic_light(l_rail_h_right)
-    road_h_left.add_traffic_light(l_rail_h_left)
-    road_v_down.add_traffic_light(l_rail_v_down)
-    road_v_up.add_traffic_light(l_rail_v_up)
-    
-    # --- ŘADIČE ---
-    
-    # 1. Řadič Křižovatky (ovládá semafory u X=400)
-    intersection_ctrl = IntersectionController(
-        [l_cross_h_right, l_cross_h_left], 
-        [l_cross_v_down, l_cross_v_up], 
+    # 3. Horizontální kolej (Dlouhá 1200, Přejezd na x 400)
+    rail_h_right = Road(1200, 'H', 0, rail2_Y, reverse=False, road_type="rail")
+    rail_h_left  = Road(1200, 'H', 0, rail2_Y, reverse=True, road_type="rail")
+
+    # 4. Vertikální kolej (Dlouhá 700, Přejezd na y 350 a 600)
+    rail_v_down = Road(700, 'V', rail1_X, 0, reverse=False, road_type="rail")
+    rail_v_up   = Road(700, 'V', rail1_X, 0, reverse=True, road_type="rail")
+
+    # --- SEMAFORY PRO KŘIŽOVATKY A PŘEJEZDY  ---
+    # Křižovatka 1 mezi road1_h a road_v (X=400, Y=350)
+    l_cross1_h_right = TrafficLight(road1_X - 30)   # Semafor na 370m
+    l_cross1_h_left  = TrafficLight(size_width - road1_X - 30)  # Semafor na 770m
+    l_cross1_v_down  = TrafficLight(road1_Y - 30)   # Semafor na 320m
+    l_cross1_v_up    = TrafficLight(road1_Y - 30)   # Semafor na 320m
+
+    road1_h_right.add_traffic_light(l_cross1_h_right)
+    road1_h_left.add_traffic_light(l_cross1_h_left)
+    road_v_down.add_traffic_light(l_cross1_v_down)
+    road_v_up.add_traffic_light(l_cross1_v_up)
+
+    # Řadič Křižovatky 1 mezi road1_h a road_v (X=400, Y=350)
+    intersection_ctrl_1 = IntersectionController(
+        [l_cross1_h_right, l_cross1_h_left], 
+        [l_cross1_v_down, l_cross1_v_up], 
         green_duration=15.0, red_clearance=2.0
     )
-    
-    # 2. Řadič Přejezdu 1
-    # Musíme mu říct, že tento přejezd je na souřadnici Y = 350 (ROAD_Y)
-    railway_ctrl_1 = RailwayController(
-        [track_down, track_up], 
-        [l_rail_h_right, l_rail_h_left],
-        crossing_point=ROAD_Y # <--- Předáme souřadnici křížení
+
+    # Křižovatka 2 mezi road2_h a road_v (X=400, Y=600)
+    l_cross2_h_right = TrafficLight(road2_X - 30)   # Semafor na 370m
+    l_cross2_h_left  = TrafficLight(size_width - road2_X - 30)  # Semafor na 770m
+    l_cross2_v_down  = TrafficLight(road2_Y - 30)   # Semafor na 570m
+    l_cross2_v_up    = TrafficLight(size_height - road2_Y - 30) # Semafor na 70m
+
+    road2_h_right.add_traffic_light(l_cross2_h_right)
+    road2_h_left.add_traffic_light(l_cross2_h_left)
+    road_v_down.add_traffic_light(l_cross2_v_down)
+    road_v_up.add_traffic_light(l_cross2_v_up)
+
+    # Řadič Křižovatky 2 mezi road2_h a road_v (X=400, Y=600)
+    intersection_ctrl_2 = IntersectionController(
+        [l_cross2_h_right, l_cross2_h_left], 
+        [l_cross2_v_down, l_cross2_v_up], 
+        green_duration=15.0, red_clearance=2.0
     )
 
-    # 3. Řadič Přejezdu 2 (horizontální trať nahoře)
+    # Přejezd 1 na road1_h (X=800, Y=350)
+    l_rail1_h_right = TrafficLight(rail1_X - 30)   # Semafor na 770m
+    l_rail1_h_left  = TrafficLight(size_width - rail1_X - 30)  # Semafor na 370m
+
+    road1_h_right.add_traffic_light(l_rail1_h_right)
+    road1_h_left.add_traffic_light(l_rail1_h_left)
+
+    # Řadič Přejezdu 1 na road1_h (X=800, Y=350)
+    railway_ctrl_1 = RailwayController(
+        [rail_v_down, rail_v_up], 
+        [l_rail1_h_right, l_rail1_h_left],
+        crossing_point=road1_Y # <--- Předáme souřadnici křížení
+    )
+
+    # Přejezd 2 na road2_h (X=800, Y=600)
+    l_rail2_h_right = TrafficLight(rail1_X - 30)   # Semafor na 770m
+    l_rail2_h_left  = TrafficLight(size_width - rail1_X - 30)  # Semafor na 370m
+
+    road2_h_right.add_traffic_light(l_rail2_h_right)
+    road2_h_left.add_traffic_light(l_rail2_h_left)
+
+    # Řadič Přejezdu 2 na road2_h (X=800, Y=600)
     railway_ctrl_2 = RailwayController(
-        [track_horiz_right, track_horiz_left],
+        [rail_v_down, rail_v_up],
+        [l_rail2_h_right, l_rail2_h_left],
+        crossing_point=road2_Y # <--- Předáme souřadnici křížení
+    )
+
+    # Přejezd 3 na road_v (X=400, Y=100)
+    l_rail_v_down = TrafficLight(rail2_Y - 30)   # Semafor na 70m
+    l_rail_v_up   = TrafficLight(size_height - rail2_Y - 30)  # Semafor na 570m
+
+    road_v_down.add_traffic_light(l_rail_v_down)
+    road_v_up.add_traffic_light(l_rail_v_up)
+
+    # Řadič Přejezdu 3 na road_v (X=400, Y=100)
+    railway_ctrl_3 = RailwayController(
+        [rail_h_right, rail_h_left],
         [l_rail_v_down, l_rail_v_up],
-        crossing_point=CROSS_X # <--- Předáme souřadnici křížení
+        crossing_point=rail2_Y # <--- Předáme souřadnici křížení
     )
     
     # --- SPUŠTĚNÍ ---
-    roads = [road_h_right, road_h_left, road_v_down, road_v_up, track_down, track_up, track_horiz_right, track_horiz_left]
+    roads = [road1_h_right, road1_h_left, road2_h_right, road2_h_left,road_v_down, road_v_up, rail_h_left, rail_h_right, rail_v_down, rail_v_up]
     generator = TrafficGenerator(roads)
     
     app = Visualizer(roads, generator, 1200, 700)
     
     # Visualizeru musíme předat OBA řadiče, aby je aktualizoval
     # Uděláme si na to malý trik - přidáme si je do seznamu
-    app.controllers = [intersection_ctrl, railway_ctrl_1, railway_ctrl_2]
+    app.controllers = [intersection_ctrl_1, intersection_ctrl_2, railway_ctrl_1, railway_ctrl_2, railway_ctrl_3]
     
     # Upravíme metodu run ve Visualizeru, aby volala všechny controllery
     # (viz malá úprava níže)
@@ -868,6 +893,6 @@ if __name__ == "__main__":
         @property
         def state(self): return "RUNNING" # Dummy
             
-    app.intersection_ctrl = MasterController([intersection_ctrl, railway_ctrl_1, railway_ctrl_2])
+    app.intersection_ctrl = MasterController(app.controllers)
     
     app.run()
