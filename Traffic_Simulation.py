@@ -19,6 +19,7 @@ class Vehicle:
         self.max_speed = speed    # Maximální rychlost pro opětovné rozjetí
         self.acceleration = acceleration
         self.direction = direction  # Směr jízdy
+        self.is_braking = False   # Zda auto právě zpomaluje (svítí brzdová světla)
 
         # Jak dlouho řidič "kouká", než se rozjede (1.1 vteřiny)
         self.start_delay = 1.1
@@ -196,6 +197,7 @@ class Road:
             
             # --- A) Resetování stavu a Akcelerace ---
             if not vehicle.stopped:
+                vehicle.is_braking = False
                 # Pokud auto jede pomaleji než je jeho maximálka, zrychlujeme
                 if vehicle.speed < vehicle.max_speed:
                     # Vzorec: rychlost = rychlost + zrychlení * čas
@@ -209,6 +211,7 @@ class Road:
             for light in self.traffic_lights:
                 distance = light.position - vehicle.position
                 if 10 < distance < 100:
+                    vehicle.is_braking = True
                     # Přibližujeme se k semaforu - můžeme začít brzdit
                     if not light.is_green:
                         # Vypočítáme potřebné zpomalení, abychom zastavili před semaforem
@@ -219,9 +222,25 @@ class Road:
                         vehicle.speed -= required_deceleration * dt
                         
                 # Pokud je semafor blízko (méně než 10m) a je červená
-                if 0 < distance < 10 and not light.is_green:
-                    should_stop = True # Důvod k zastavení 1: Červená
-                    break
+                if 0 < distance < 10:
+                    vehicle.is_braking = True
+                    # a) Červená -> STŮJ
+                    if not light.is_green:
+                        should_stop = True
+                    
+                    # b) Zelená -> KONTROLA MÍSTA ZA KŘIŽOVATKOU (Anti-Gridlock)
+                    else:
+                        # Podíváme se na auto před námi
+                        if i < len(self.vehicles) - 1:
+                            vehicle_ahead = self.vehicles[i+1]
+                            gap = vehicle_ahead.position - vehicle.position - vehicle_ahead.get_length()
+                            
+                            # Odhad šířky křižovatky + rezerva
+                            # Pokud je mezera menší, nevejdeme se tam celí a zůstali bychom trčet v křižovatce.
+                            intersection_width = 60 + vehicle.get_length() # Základní šířka + délka našeho auta
+                            
+                            if gap < intersection_width and (vehicle_ahead.speed < 10.0 or (vehicle.speed > vehicle_ahead.speed and (vehicle_ahead.max_speed / vehicle_ahead.speed > 1.5 and vehicle_ahead.is_braking))):
+                                should_stop = True # I když je zelená, nemůžeme vjet!
 
             # --- C) Reakce na vozidla (Adaptivní tempomat) ---
             # Podíváme se, jestli je před námi nějaké auto
@@ -234,16 +253,17 @@ class Road:
                 gap = vehicle_ahead.position - vehicle.position - vehicle_ahead.get_length()
                 
                 # Dynamická bezpečná vzdálenost (čím rychleji jedu, tím větší mezeru chci)
-                # Pravidlo 2 sekund: safe_dist = rychlost * 1.5 + rezerva
-                safe_distance = (vehicle.speed * 1.5) + 5.0
+                # Pravidlo 2 sekund: safe_dist = rychlost * 2 + rezerva
+                safe_distance = (vehicle.speed * 2) + 5.0
                 
                 if gap < safe_distance:
                     # HROZÍ SRÁŽKA!
+                    vehicle.is_braking = True
                     
                     if vehicle_ahead.stopped or vehicle_ahead.speed == 0:
                         # Pokud auto před námi stojí a jsme fakt blízko -> Zastavíme taky
                         if gap < 5.0: # 5 metrů od nárazníku
-                            should_stop = True # Důvod k zastavení 2: Auto před námi stojí
+                            should_stop = True # Důvod k zastavení: Auto před námi stojí
                         else:
                             # Brzdíme
                             time_to_brake = gap / max(vehicle.speed, 0.1) # Vyhneme se dělení nulou
@@ -299,7 +319,7 @@ class IntersectionController:
     """
     Řídí dva semafory na křížení cest. Zajišťuje, že nemohou mít oba zelenou.
     """
-    def __init__(self, lights_h, lights_v, green_duration=8.0, red_clearance=2.0):
+    def __init__(self, lights_h, lights_v, green_duration=10.0, red_clearance=2.0):
         self.lights_h = lights_h # Očekáváme seznam (list)
         self.lights_v = lights_v # Očekáváme seznam (list)
         self.green_duration = green_duration
@@ -345,9 +365,10 @@ class RailwayController:
     """
     Řídí železniční přejezd. Auta mají zelenou, dokud se neobjeví vlak.
     """
-    def __init__(self, tracks, crossing_lights):
+    def __init__(self, tracks, crossing_lights, crossing_point):
         self.tracks = tracks           # Seznam kolejí
         self.crossing_lights = crossing_lights # Semafory na silnici před přejezdem
+        self.crossing_point = crossing_point # Pozice přejezdu na silnici (v metrech)
         self.state = "OPEN"            # OPEN (auta jedou) / CLOSED (vlak jede)
         self.safety_timer = 0.0
         
@@ -361,15 +382,19 @@ class RailwayController:
     def update(self, dt):
         # 1. Detekce vlaku
         train_approaching = False
-        
-        # Přejezd je na ose Y = 350. 
-        # Detekujeme vlaky v rozmezí 300m před a 150m za přejezdem.
-        detection_zone_start = 350 - 300 
-        detection_zone_end   = 350 + 150 
-        
+         
         for track in self.tracks:
+            # Pokud kolej vede "pozpátku" (reverse), musíme souřadnici otočit.
+            if track.reverse:
+                current_crossing_pos = track.length - self.crossing_point
+            else:
+                current_crossing_pos = self.crossing_point
+
+            # Detekční zóna se počítá pro každou kolej zvlášť
+            detection_zone_start = current_crossing_pos - 300 
+            detection_zone_end   = current_crossing_pos + 150 
+            
             for v in track.vehicles:
-                # Pokud je vlak v nebezpečné zóně
                 if detection_zone_start < v.position < detection_zone_end:
                     train_approaching = True
 
@@ -420,10 +445,10 @@ class TrafficGenerator:
 
                     if road.road_type == "rail":
                         # Vlaky jezdí zřídka (např. jednou za 45 až 75 sekund)
-                        self.next_spawns[road] = random.uniform(45.0, 75.0)
+                        self.next_spawns[road] = random.uniform(45, 75)
                     else:
                         # Auta jezdí často (např. každé 2 až 5 sekund)
-                        self.next_spawns[road] = random.uniform(5.0, 10.0)
+                        self.next_spawns[road] = random.uniform(2.0, 5.0)
 
     def spawn_vehicle(self, road):
         """Vytvoří náhodné vozidlo a přidá ho na silnici, pokud je volno."""
@@ -501,20 +526,34 @@ class Visualizer:
                                 (road.start_x, road.start_y), (road.start_x, road.start_y + road.length), 2)
 
         else:
-            # --- VYKRESLENÍ KOLEJÍ ---
-            # 1. Štěrk (podklad)
-            pygame.draw.rect(self.screen, (100, 80, 50), (road.start_x - 16, road.start_y, 33, road.length))
+            # --- VYKRESLENÍ KOLEJÍ (Univerzální) ---
+            if road.direction == 'V':
+                # VERTIKÁLNÍ KOLEJE
+                # 1. Štěrk
+                pygame.draw.rect(self.screen, (100, 80, 50), (road.start_x - 16, road.start_y, 33, road.length))
+                # 2. Pražce (vodorovné čárky)
+                for i in range(0, road.length, 10):
+                    y = road.start_y + i
+                    pygame.draw.line(self.screen, (60, 40, 20), (road.start_x - 16, y), (road.start_x + 16, y), 4)
+                # 3. Kolejnice (svislé čáry)
+                pygame.draw.line(self.screen, (180, 180, 180), (road.start_x - 8, road.start_y), (road.start_x - 8, road.start_y + road.length), 2)
+                pygame.draw.line(self.screen, (180, 180, 180), (road.start_x + 7, road.start_y), (road.start_x + 7, road.start_y + road.length), 2)
+                pygame.draw.line(self.screen, (180, 180, 180), (road.start_x - 14, road.start_y), (road.start_x - 14, road.start_y + road.length), 2)
+                pygame.draw.line(self.screen, (180, 180, 180), (road.start_x + 13, road.start_y), (road.start_x + 13, road.start_y + road.length), 2)
             
-            # 2. Pražce (čárky každých 10 pixelů)
-            for i in range(0, road.length, 10):
-                y = road.start_y + i
-                pygame.draw.line(self.screen, (60, 40, 20), (road.start_x - 16, y), (road.start_x + 16, y), 4)
-            
-            # 3. Kolejnice (svislé čáry)
-            pygame.draw.line(self.screen, (180, 180, 180), (road.start_x - 14, road.start_y), (road.start_x - 14, road.start_y + road.length), 2)
-            pygame.draw.line(self.screen, (180, 180, 180), (road.start_x + 13, road.start_y), (road.start_x + 13, road.start_y + road.length), 2)
-            pygame.draw.line(self.screen, (180, 180, 180), (road.start_x - 8, road.start_y), (road.start_x - 8, road.start_y + road.length), 2)
-            pygame.draw.line(self.screen, (180, 180, 180), (road.start_x + 7, road.start_y), (road.start_x + 7, road.start_y + road.length), 2)
+            else: 
+                # HORIZONTÁLNÍ KOLEJE
+                # 1. Štěrk
+                pygame.draw.rect(self.screen, (100, 80, 50), (road.start_x, road.start_y - 16, road.length, 33))
+                # 2. Pražce (svislé čárky)
+                for i in range(0, road.length, 10):
+                    x = road.start_x + i
+                    pygame.draw.line(self.screen, (60, 40, 20), (x, road.start_y - 16), (x, road.start_y + 16), 4)
+                # 3. Kolejnice (vodorovné čáry)
+                pygame.draw.line(self.screen, (180, 180, 180), (road.start_x, road.start_y - 8), (road.start_x + road.length, road.start_y - 8), 2)
+                pygame.draw.line(self.screen, (180, 180, 180), (road.start_x, road.start_y + 7), (road.start_x + road.length, road.start_y + 7), 2)
+                pygame.draw.line(self.screen, (180, 180, 180), (road.start_x, road.start_y - 14), (road.start_x + road.length, road.start_y - 14), 2)
+                pygame.draw.line(self.screen, (180, 180, 180), (road.start_x, road.start_y + 13), (road.start_x + road.length, road.start_y + 13), 2)
             
     def draw_vehicle(self, v, road):
         length = v.get_length() * self.scale
@@ -646,7 +685,8 @@ class Visualizer:
             # VRSTVA 1: Silnice (Podklad)
             # Nejdřív nakreslíme asfalt všech silnic, aby tvořily souvislý povrch
             for road in self.roads:
-                self.draw_road_surface(road)
+                if road.road_type == "road":
+                    self.draw_road_surface(road)
 
             # VRSTVA 2: ZÁPLATA KŘIŽOVATKY
             # Najdeme souřadnice křižovatky
@@ -668,17 +708,48 @@ class Visualizer:
                     # Kreslíme záplatu 40x40 (střed silnic)
                     pygame.draw.rect(self.screen, (50, 50, 50), (cx - 20, cy - 20, 40, 40))
             
-            # VRSTVA 3: Semafory (Pod auty nebo nad auty? Spíše pod, aby do nich auta nenarážela vizuálně)
+            # --- VRSTVA 3: KOLEJE (Musí být nad asfaltem i záplatami!) ---
+            for road in self.roads:
+                if road.road_type == "rail":
+                    self.draw_road_surface(road)
+            
+            # VRSTVA 4: Semafory (Pod auty nebo nad auty? Spíše pod, aby do nich auta nenarážela vizuálně)
             # Ale v 2D top-down je lepší mít světla viditelná vždy.
             for road in self.roads:
                 self.draw_lights(road)
 
-            # VRSTVA 4: Vozidla (Musí být VŽDY nahoře na asfaltu)
+            # VRSTVA 5: Vozidla (Musí být VŽDY nahoře na asfaltu)
             for road in self.roads:
                 for v in road.vehicles:
                     self.draw_vehicle(v, road)
 
-            # VRSTVA 5: UI (Úplně nahoře)
+            # --- VRSTVA 6: TUNELY (KRYTÍ VLAKŮ) ---
+            # Toto se kreslí AŽ PŘES VLAKY, takže to vypadá, že jedou pod zemí/mostem.
+            
+            rail_xs = set()
+            rail_ys = set()
+            for r in self.roads:
+                if r.road_type == "rail":
+                    if r.direction == 'V': rail_xs.add(r.start_x)
+                    elif r.direction == 'H': rail_ys.add(r.start_y)
+            
+            for rx in rail_xs:
+                for ry in rail_ys:
+                    # Tunel musí být o kousek větší než koleje (např. 60x60), aby schoval vlak
+                    tunnel_size = 60
+                    tunnel_rect = (rx - tunnel_size//2, ry - tunnel_size//2, tunnel_size, tunnel_size)
+                    
+                    # 1. Střecha tunelu (Barva terénu/Beton)
+                    pygame.draw.rect(self.screen, (40, 40, 45), tunnel_rect)
+                    
+                    # 2. Okraj (Rám mostu)
+                    pygame.draw.rect(self.screen, (20, 20, 25), tunnel_rect, 4)
+                    
+                    # 3. Designový prvek (X na střeše nebo šrafování)
+                    pygame.draw.line(self.screen, (30, 30, 35), (rx - 20, ry - 20), (rx + 20, ry + 20), 3)
+                    pygame.draw.line(self.screen, (30, 30, 35), (rx + 20, ry - 20), (rx - 20, ry + 20), 3)
+
+            # VRSTVA 7: UI (Úplně nahoře)
             self.draw_ui()
             
             pygame.display.flip()
@@ -693,7 +764,8 @@ if __name__ == "__main__":
     # SOUŘADNICE
     CROSS_X = 400  # Křižovatka
     RAIL_X = 800   # Přejezd
-    ROAD_Y = 350
+    RAIL_Y = 100   # Horizontální trať nahoře
+    ROAD_Y = 350   # Vertikální silnice (křižovatka na 400)
     
     # 1. HORIZONTÁLNÍ SILNICE (Dlouhé 1200m, pokrývají oba uzly)
     road_h_right = Road(1200, 'H', 0, ROAD_Y, reverse=False)
@@ -707,6 +779,10 @@ if __name__ == "__main__":
     # Tady definujeme, že tohle jsou koleje!
     track_down = Road(700, 'V', RAIL_X, 0, reverse=False, road_type="rail")
     track_up   = Road(700, 'V', RAIL_X, 0, reverse=True, road_type="rail")
+
+    # Příklad: Horizontální trať nahoře
+    track_horiz_right = Road(1200, 'H', 0, RAIL_Y, reverse=False, road_type="rail")
+    track_horiz_left  = Road(1200, 'H', 0, RAIL_Y, reverse=True, road_type="rail")
     
     # --- SEMAFORY PRO KŘIŽOVATKU (X=400) ---
     # H-Right: Jede 0->1200. Křižovatka na 400. Semafor na 370.
@@ -733,10 +809,18 @@ if __name__ == "__main__":
     # H-Left: Jede 1200->0. Přejezd na 800.
     # Ujetá vzdálenost k přejezdu: 1200 - 800 = 400. Semafor na 370.
     l_rail_h_left = TrafficLight(370)
+
+    # V-Down
+    l_rail_v_down = TrafficLight(70)
+
+    # V-Up
+    l_rail_v_up = TrafficLight(570)
     
     # Přiřazení semaforů přejezdu
     road_h_right.add_traffic_light(l_rail_h_right)
     road_h_left.add_traffic_light(l_rail_h_left)
+    road_v_down.add_traffic_light(l_rail_v_down)
+    road_v_up.add_traffic_light(l_rail_v_up)
     
     # --- ŘADIČE ---
     
@@ -744,25 +828,33 @@ if __name__ == "__main__":
     intersection_ctrl = IntersectionController(
         [l_cross_h_right, l_cross_h_left], 
         [l_cross_v_down, l_cross_v_up], 
-        green_duration=6.0, red_clearance=2.0
+        green_duration=15.0, red_clearance=2.0
     )
     
-    # 2. Řadič Přejezdu (ovládá semafory u X=800)
-    # Sleduje koleje (track_down, track_up) a řídí silniční světla
-    railway_ctrl = RailwayController(
+    # 2. Řadič Přejezdu 1
+    # Musíme mu říct, že tento přejezd je na souřadnici Y = 350 (ROAD_Y)
+    railway_ctrl_1 = RailwayController(
         [track_down, track_up], 
-        [l_rail_h_right, l_rail_h_left]
+        [l_rail_h_right, l_rail_h_left],
+        crossing_point=ROAD_Y # <--- Předáme souřadnici křížení
+    )
+
+    # 3. Řadič Přejezdu 2 (horizontální trať nahoře)
+    railway_ctrl_2 = RailwayController(
+        [track_horiz_right, track_horiz_left],
+        [l_rail_v_down, l_rail_v_up],
+        crossing_point=CROSS_X # <--- Předáme souřadnici křížení
     )
     
     # --- SPUŠTĚNÍ ---
-    roads = [road_h_right, road_h_left, road_v_down, road_v_up, track_down, track_up]
+    roads = [road_h_right, road_h_left, road_v_down, road_v_up, track_down, track_up, track_horiz_right, track_horiz_left]
     generator = TrafficGenerator(roads)
     
     app = Visualizer(roads, generator, 1200, 700)
     
     # Visualizeru musíme předat OBA řadiče, aby je aktualizoval
     # Uděláme si na to malý trik - přidáme si je do seznamu
-    app.controllers = [intersection_ctrl, railway_ctrl]
+    app.controllers = [intersection_ctrl, railway_ctrl_1, railway_ctrl_2]
     
     # Upravíme metodu run ve Visualizeru, aby volala všechny controllery
     # (viz malá úprava níže)
@@ -776,6 +868,6 @@ if __name__ == "__main__":
         @property
         def state(self): return "RUNNING" # Dummy
             
-    app.intersection_ctrl = MasterController([intersection_ctrl, railway_ctrl])
+    app.intersection_ctrl = MasterController([intersection_ctrl, railway_ctrl_1, railway_ctrl_2])
     
     app.run()
