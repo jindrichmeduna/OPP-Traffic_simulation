@@ -412,8 +412,8 @@ class SmartIntersectionController:
 
             # 3. CHYTRÉ ROZHODOVÁNÍ          
             # Pokud na červené čeká více aut než kolik jede na zelené, přepni.
-            # Přidáme malý práh (+1), abychom nepřepínali zbytečně při rovnosti.
-            if queue_v > queue_h + 1:
+            # Přidáme malý práh (+2), abychom nepřepínali zbytečně při rovnosti.
+            if queue_v > queue_h + 2:
                 print(f"SMART: Přepínám na V (Fronta V:{queue_v} vs H:{queue_h})")
                 self.change_state("TO_VERTICAL")
 
@@ -428,7 +428,7 @@ class SmartIntersectionController:
                 self.change_state("TO_HORIZONTAL")
                 return
             
-            if queue_h > queue_v + 1:
+            if queue_h > queue_v + 2:
                 print(f"SMART: Přepínám na H (Fronta H:{queue_h} vs V:{queue_v})")
                 self.change_state("TO_HORIZONTAL")
 
@@ -480,7 +480,7 @@ class RailwayController:
                 current_crossing_pos = self.crossing_point
 
             # Detekční zóna se počítá pro každou kolej zvlášť
-            detection_zone_start = current_crossing_pos - 200 
+            detection_zone_start = current_crossing_pos - 250 
             detection_zone_end   = current_crossing_pos + 200 
             
             for v in track.vehicles:
