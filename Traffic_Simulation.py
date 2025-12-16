@@ -34,6 +34,7 @@ class Vehicle:
             self.position += self.speed * dt
 
     def stop(self):
+        # Zastavení vozidla
         self.stopped = True
         self.speed = 0
 
@@ -94,7 +95,7 @@ class Train(Vehicle):
     def __init__(self, speed, position, direction):
         super().__init__(position, speed, acceleration=0.0, direction=direction)
         self.color = (200, 200, 200) # Šedý/Stříbrný
-        self.stopped = False # Pojistka
+        self.stopped = False # Pojistka - vlak v simulaci NIKDY nezastaví
 
     def get_length(self):
         return 120.0 
@@ -139,7 +140,7 @@ class SmartTrafficLight(TrafficLight):
     def __init__(self, position, detection_range=50.0):
         super().__init__(position)
         self.detection_range = detection_range # Jak daleko semafor "vidí"
-        self.is_green = False # Šetříme energii, defaultně červená :)
+        self.is_green = False # Šetříme energii, defaultně červená
 
     def update(self, dt, vehicles):
         # 1. Zjistíme, jestli je nějaké auto v zóně před semaforem
@@ -301,7 +302,7 @@ class Road:
             self.stats_avg_speed = 0.0
 
 
-# --- Mozek křižovatky ---
+# --- 5. Mozek křižovatky ---
 class IntersectionController:
     # Řídí dva semafory na křížení cest. Zajišťuje, že nemohou mít oba zelenou.
     def __init__(self, lights_h, lights_v, green_duration=10.0, red_clearance=2.0):
@@ -322,6 +323,7 @@ class IntersectionController:
             l.is_green = is_green
 
     def update(self, dt):
+        # Jednoduchý stavový automat pro přepínání semaforů.
         self.timer += dt
         if self.state == "H_GREEN":
             if self.timer >= self.green_duration:
@@ -337,6 +339,7 @@ class IntersectionController:
                 self.change_state("H_GREEN")
 
     def change_state(self, new_state):
+        # Změna stavu a aktualizace semaforů
         self.state = new_state
         self.timer = 0.0
         if new_state == "H_GREEN":
@@ -437,6 +440,7 @@ class SmartIntersectionController:
                 self.change_state("H_GREEN")
 
     def change_state(self, new_state):
+        # Změna stavu a aktualizace semaforů
         self.state = new_state
         self.timer = 0.0
         
@@ -501,8 +505,7 @@ class RailwayController:
                 self.set_lights(True) # Zelená pro auta
 
 
-# --- 5. GENERÁTOR DOPRAVY ---
-
+# --- 6. GENERÁTOR DOPRAVY ---
 class TrafficGenerator:
     # Třída, která se stará o automatické generování dopravy.
     def __init__(self, roads):
@@ -569,7 +572,7 @@ class TrafficGenerator:
         return True
 
 
-# --- 6. VIZUALIZACE (Pygame) ---
+# --- 7. VIZUALIZACE (Pygame) ---
 
 class Visualizer:
     def __init__(self, roads, generator=None, width=1000, height=700):
